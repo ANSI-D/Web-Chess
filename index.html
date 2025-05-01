@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>JS Chess</title>
+    <title>Chess with Proper Movement Rules</title>
     <style>
         @font-face {
             font-family: 'ChessMerida';
@@ -56,6 +56,10 @@
             background-color: #a9a9a9 !important;
         }
         
+        .possible-move {
+            background-color: rgba(0, 255, 0, 0.3);
+        }
+        
         #status {
             font-size: 1.2em;
             font-weight: bold;
@@ -76,6 +80,7 @@
             let selectedPiece = null;
             let currentPlayer = 'white';
             let gameState = createInitialBoard();
+            let possibleMoves = [];
             
             function createInitialBoard() {
                 const board = Array(8).fill().map(() => Array(8).fill(null));
@@ -108,6 +113,11 @@
                             tile.classList.add('selected');
                         }
                         
+                        // Highlight possible moves
+                        if (possibleMoves.some(move => move.row === row && move.col === col)) {
+                            tile.classList.add('possible-move');
+                        }
+                        
                         const piece = gameState[row][col];
                         if (piece) {
                             tile.textContent = getPieceSymbol(piece);
@@ -132,12 +142,110 @@
                 return symbols[piece.type][piece.color];
             }
             
+            function getPossibleMoves(row, col) {
+                const piece = gameState[row][col];
+                if (!piece) return [];
+                
+                const moves = [];
+                const directions = {
+                    pawn: { white: -1, black: 1 },
+                    king: [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]],
+                    knight: [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]],
+                    bishop: [],
+                    rook: [],
+                    queen: []
+                };
+                
+                // Sliding pieces (rook, bishop, queen)
+                const slidingDirections = {
+                    rook: [[-1,0], [1,0], [0,-1], [0,1]],
+                    bishop: [[-1,-1], [-1,1], [1,-1], [1,1]],
+                    queen: [[-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]]
+                };
+                
+                switch (piece.type) {
+                    case 'pawn':
+                        const direction = directions.pawn[piece.color];
+                        // Forward move
+                        if (!gameState[row + direction][col]) {
+                            moves.push({row: row + direction, col});
+                            // Double move from starting position
+                            if ((piece.color === 'white' && row === 6) || (piece.color === 'black' && row === 1)) {
+                                if (!gameState[row + 2 * direction][col]) {
+                                    moves.push({row: row + 2 * direction, col});
+                                }
+                            }
+                        }
+                        // Captures
+                        for (const captureCol of [col - 1, col + 1]) {
+                            if (captureCol >= 0 && captureCol < 8) {
+                                const target = gameState[row + direction][captureCol];
+                                if (target && target.color !== piece.color) {
+                                    moves.push({row: row + direction, col: captureCol});
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case 'knight':
+                        for (const [dr, dc] of directions.knight) {
+                            const newRow = row + dr;
+                            const newCol = col + dc;
+                            if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                                const target = gameState[newRow][newCol];
+                                if (!target || target.color !== piece.color) {
+                                    moves.push({row: newRow, col: newCol});
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case 'king':
+                        for (const [dr, dc] of directions.king) {
+                            const newRow = row + dr;
+                            const newCol = col + dc;
+                            if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                                const target = gameState[newRow][newCol];
+                                if (!target || target.color !== piece.color) {
+                                    moves.push({row: newRow, col: newCol});
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case 'bishop':
+                    case 'rook':
+                    case 'queen':
+                        for (const [dr, dc] of slidingDirections[piece.type]) {
+                            let newRow = row + dr;
+                            let newCol = col + dc;
+                            while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                                const target = gameState[newRow][newCol];
+                                if (!target) {
+                                    moves.push({row: newRow, col: newCol});
+                                } else {
+                                    if (target.color !== piece.color) {
+                                        moves.push({row: newRow, col: newCol});
+                                    }
+                                    break;
+                                }
+                                newRow += dr;
+                                newCol += dc;
+                            }
+                        }
+                        break;
+                }
+                
+                return moves;
+            }
+            
             function handleTileClick(row, col) {
                 const piece = gameState[row][col];
                 
                 if (!selectedPiece) {
                     if (piece && piece.color === currentPlayer) {
                         selectedPiece = { row, col };
+                        possibleMoves = getPossibleMoves(row, col);
                         renderBoard();
                     }
                     return;
@@ -145,18 +253,31 @@
                 
                 if (selectedPiece.row === row && selectedPiece.col === col) {
                     selectedPiece = null;
+                    possibleMoves = [];
                     renderBoard();
                     return;
                 }
                 
-                // Move the piece
-                gameState[row][col] = gameState[selectedPiece.row][selectedPiece.col];
-                gameState[selectedPiece.row][selectedPiece.col] = null;
-                selectedPiece = null;
+                // Check if the move is valid
+                const isValidMove = possibleMoves.some(move => move.row === row && move.col === col);
                 
-                // Switch turns
-                currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
-                statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
+                if (isValidMove) {
+                    // Move the piece
+                    gameState[row][col] = gameState[selectedPiece.row][selectedPiece.col];
+                    gameState[selectedPiece.row][selectedPiece.col] = null;
+                    
+                    // Handle pawn promotion
+                    if (gameState[row][col].type === 'pawn' && (row === 0 || row === 7)) {
+                        gameState[row][col].type = 'queen'; // Auto-promote to queen for simplicity
+                    }
+                    
+                    selectedPiece = null;
+                    possibleMoves = [];
+                    
+                    // Switch turns
+                    currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                    statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
+                }
                 
                 renderBoard();
             }
