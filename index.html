@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JS Chess</title>
+    <style>
+        @font-face {
+            font-family: 'ChessMerida';
+            src: url('https://cdn.jsdelivr.net/gh/mliebelt/chess-fonts@latest/fonts/merida/merida_regular.woff') format('woff');
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            margin: 20px 0;
+            border: 2px solid #333;
+        }
+        
+        .tile {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'ChessMerida', sans-serif;
+            font-size: 40px;
+            cursor: pointer;
+        }
+        
+        .white-tile {
+            background-color: #ffffffcb;
+        }
+        
+        .black-tile {
+            background-color: #4f5f85;
+        }
+        
+        .white-piece {
+            color: white;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+        }
+        
+        .black-piece {
+            color: black;
+        }
+        
+        .selected {
+            background-color: #a9a9a9 !important;
+        }
+        
+        #status {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chess Game</h1>
+    <div id="status">White's turn</div>
+    <div id="chessboard"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const chessboard = document.getElementById('chessboard');
+            const statusDisplay = document.getElementById('status');
+            
+            let selectedPiece = null;
+            let currentPlayer = 'white';
+            let gameState = createInitialBoard();
+            
+            function createInitialBoard() {
+                const board = Array(8).fill().map(() => Array(8).fill(null));
+                
+                // Set up pawns
+                for (let i = 0; i < 8; i++) {
+                    board[1][i] = { type: 'pawn', color: 'black' };
+                    board[6][i] = { type: 'pawn', color: 'white' };
+                }
+                
+                // Set up back row pieces
+                const pieceOrder = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+                for (let i = 0; i < 8; i++) {
+                    board[0][i] = { type: pieceOrder[i], color: 'black' };
+                    board[7][i] = { type: pieceOrder[i], color: 'white' };
+                }
+                
+                return board;
+            }
+            
+            function renderBoard() {
+                chessboard.innerHTML = '';
+                
+                for (let row = 0; row < 8; row++) {
+                    for (let col = 0; col < 8; col++) {
+                        const tile = document.createElement('div');
+                        tile.className = `tile ${(row + col) % 2 === 0 ? 'white-tile' : 'black-tile'}`;
+                        
+                        if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
+                            tile.classList.add('selected');
+                        }
+                        
+                        const piece = gameState[row][col];
+                        if (piece) {
+                            tile.textContent = getPieceSymbol(piece);
+                            tile.classList.add(`${piece.color}-piece`);
+                        }
+                        
+                        tile.addEventListener('click', () => handleTileClick(row, col));
+                        chessboard.appendChild(tile);
+                    }
+                }
+            }
+            
+            function getPieceSymbol(piece) {
+                const symbols = {
+                    king:   { white: '\u2654', black: '\u265A' },
+                    queen:  { white: '\u2655', black: '\u265B' },
+                    rook:   { white: '\u2656', black: '\u265C' },
+                    bishop: { white: '\u2657', black: '\u265D' },
+                    knight: { white: '\u2658', black: '\u265E' },
+                    pawn:   { white: '\u2659', black: '\u265F' }
+                };
+                return symbols[piece.type][piece.color];
+            }
+            
+            function handleTileClick(row, col) {
+                const piece = gameState[row][col];
+                
+                if (!selectedPiece) {
+                    if (piece && piece.color === currentPlayer) {
+                        selectedPiece = { row, col };
+                        renderBoard();
+                    }
+                    return;
+                }
+                
+                if (selectedPiece.row === row && selectedPiece.col === col) {
+                    selectedPiece = null;
+                    renderBoard();
+                    return;
+                }
+                
+                // Move the piece
+                gameState[row][col] = gameState[selectedPiece.row][selectedPiece.col];
+                gameState[selectedPiece.row][selectedPiece.col] = null;
+                selectedPiece = null;
+                
+                // Switch turns
+                currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
+                
+                renderBoard();
+            }
+            
+            renderBoard();
+        });
+    </script>
+</body>
+</html>
