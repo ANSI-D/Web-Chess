@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Chess with Proper Movement Rules</title>
+    <title>JS Chess</title>
     <style>
         @font-face {
             font-family: 'ChessMerida';
@@ -60,6 +60,10 @@
             background-color: rgba(0, 255, 0, 0.3);
         }
         
+        .en-passant {
+            background-color: rgba(255, 255, 0, 0.3);
+        }
+        
         #status {
             font-size: 1.2em;
             font-weight: bold;
@@ -77,21 +81,22 @@
             const chessboard = document.getElementById('chessboard');
             const statusDisplay = document.getElementById('status');
             
+            // Game state
             let selectedPiece = null;
             let currentPlayer = 'white';
             let gameState = createInitialBoard();
             let possibleMoves = [];
+            let enPassantSquare = null; // Tracks the square vulnerable to en passant
+            let lastDoubleStepPawn = null; // Tracks pawn that just moved two squares
             
             function createInitialBoard() {
                 const board = Array(8).fill().map(() => Array(8).fill(null));
                 
-                // Set up pawns
                 for (let i = 0; i < 8; i++) {
                     board[1][i] = { type: 'pawn', color: 'black' };
                     board[6][i] = { type: 'pawn', color: 'white' };
                 }
                 
-                // Set up back row pieces
                 const pieceOrder = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
                 for (let i = 0; i < 8; i++) {
                     board[0][i] = { type: pieceOrder[i], color: 'black' };
@@ -113,9 +118,9 @@
                             tile.classList.add('selected');
                         }
                         
-                        // Highlight possible moves
-                        if (possibleMoves.some(move => move.row === row && move.col === col)) {
-                            tile.classList.add('possible-move');
+                        const move = possibleMoves.find(m => m.row === row && m.col === col);
+                        if (move) {
+                            tile.classList.add(move.isEnPassant ? 'en-passant' : 'possible-move');
                         }
                         
                         const piece = gameState[row][col];
@@ -144,99 +149,119 @@
             
             function getPossibleMoves(row, col) {
                 const piece = gameState[row][col];
-                if (!piece) return [];
+                if (!piece || piece.color !== currentPlayer) return [];
                 
                 const moves = [];
-                const directions = {
-                    pawn: { white: -1, black: 1 },
-                    king: [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]],
-                    knight: [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]],
-                    bishop: [],
-                    rook: [],
-                    queen: []
-                };
-                
-                // Sliding pieces (rook, bishop, queen)
-                const slidingDirections = {
-                    rook: [[-1,0], [1,0], [0,-1], [0,1]],
-                    bishop: [[-1,-1], [-1,1], [1,-1], [1,1]],
-                    queen: [[-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]]
-                };
+                const direction = piece.color === 'white' ? -1 : 1;
+                const startRow = piece.color === 'white' ? 6 : 1;
                 
                 switch (piece.type) {
                     case 'pawn':
-                        const direction = directions.pawn[piece.color];
                         // Forward move
                         if (!gameState[row + direction][col]) {
                             moves.push({row: row + direction, col});
+                            
                             // Double move from starting position
-                            if ((piece.color === 'white' && row === 6) || (piece.color === 'black' && row === 1)) {
-                                if (!gameState[row + 2 * direction][col]) {
-                                    moves.push({row: row + 2 * direction, col});
-                                }
+                            if (row === startRow && !gameState[row + 2 * direction][col]) {
+                                moves.push({row: row + 2 * direction, col});
                             }
                         }
-                        // Captures
+                        
+                        // Normal captures
                         for (const captureCol of [col - 1, col + 1]) {
                             if (captureCol >= 0 && captureCol < 8) {
                                 const target = gameState[row + direction][captureCol];
                                 if (target && target.color !== piece.color) {
                                     moves.push({row: row + direction, col: captureCol});
                                 }
+                                
+                                // En passant capture
+                                if (lastDoubleStepPawn && 
+                                    lastDoubleStepPawn.row === row && 
+                                    lastDoubleStepPawn.col === captureCol) {
+                                    moves.push({
+                                        row: row + direction, 
+                                        col: captureCol,
+                                        isEnPassant: true
+                                    });
+                                }
                             }
                         }
                         break;
                         
                     case 'knight':
-                        for (const [dr, dc] of directions.knight) {
-                            const newRow = row + dr;
-                            const newCol = col + dc;
-                            if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
-                                const target = gameState[newRow][newCol];
-                                if (!target || target.color !== piece.color) {
-                                    moves.push({row: newRow, col: newCol});
-                                }
-                            }
-                        }
-                        break;
-                        
-                    case 'king':
-                        for (const [dr, dc] of directions.king) {
-                            const newRow = row + dr;
-                            const newCol = col + dc;
-                            if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
-                                const target = gameState[newRow][newCol];
-                                if (!target || target.color !== piece.color) {
-                                    moves.push({row: newRow, col: newCol});
-                                }
-                            }
-                        }
+                        // Knight's L-shaped moves
+                        const knightMoves = [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]];
+                        addStandardMoves(row, col, knightMoves, moves);
                         break;
                         
                     case 'bishop':
+                        // Diagonal moves
+                        const bishopDirections = [[-1,-1], [-1,1], [1,-1], [1,1]];
+                        addSlidingMoves(row, col, bishopDirections, moves);
+                        break;
+                        
                     case 'rook':
+                        // Straight moves
+                        const rookDirections = [[-1,0], [1,0], [0,-1], [0,1]];
+                        addSlidingMoves(row, col, rookDirections, moves);
+                        break;
+                        
                     case 'queen':
-                        for (const [dr, dc] of slidingDirections[piece.type]) {
-                            let newRow = row + dr;
-                            let newCol = col + dc;
-                            while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
-                                const target = gameState[newRow][newCol];
-                                if (!target) {
-                                    moves.push({row: newRow, col: newCol});
-                                } else {
-                                    if (target.color !== piece.color) {
-                                        moves.push({row: newRow, col: newCol});
-                                    }
-                                    break;
-                                }
-                                newRow += dr;
-                                newCol += dc;
-                            }
-                        }
+                        // All directions
+                        const queenDirections = [[-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]];
+                        addSlidingMoves(row, col, queenDirections, moves);
+                        break;
+                        
+                    case 'king':
+                        // One square in any direction (need to add a case for King vs King)
+                        const kingMoves = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
+                        addStandardMoves(row, col, kingMoves, moves);
                         break;
                 }
                 
                 return moves;
+            }
+            
+            function addStandardMoves(row, col, movePattern, moves) {
+                const piece = gameState[row][col];
+                
+                for (const [dr, dc] of movePattern) {
+                    const newRow = row + dr;
+                    const newCol = col + dc;
+                    
+                    if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                        const target = gameState[newRow][newCol];
+                        if (!target || target.color !== piece.color) {
+                            moves.push({row: newRow, col: newCol});
+                        }
+                    }
+                }
+            }
+            
+            function addSlidingMoves(row, col, directions, moves) {
+                const piece = gameState[row][col];
+                
+                for (const [dr, dc] of directions) {
+                    let newRow = row + dr;
+                    let newCol = col + dc;
+                    
+                    while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                        const target = gameState[newRow][newCol];
+                        
+                        if (!target) {
+                            moves.push({row: newRow, col: newCol});
+                        } else {
+                            if (target.color !== piece.color) {
+                                moves.push({row: newRow, col: newCol});
+                            }
+                            break;
+                        }
+                        
+                        newRow += dr;
+                        newCol += dc;
+                    }
+                }
             }
             
             function handleTileClick(row, col) {
@@ -258,23 +283,31 @@
                     return;
                 }
                 
-                // Check if the move is valid
-                const isValidMove = possibleMoves.some(move => move.row === row && move.col === col);
+                const move = possibleMoves.find(m => m.row === row && m.col === col);
                 
-                if (isValidMove) {
-                    // Move the piece
+                if (move) {
                     gameState[row][col] = gameState[selectedPiece.row][selectedPiece.col];
                     gameState[selectedPiece.row][selectedPiece.col] = null;
                     
-                    // Handle pawn promotion
+                    // Handle en passant capture
+                    if (move.isEnPassant) {
+                        gameState[selectedPiece.row][col] = null; // Remove the captured pawn
+                    }
+                    
+                    // Set en passant opportunity if pawn moved two squares
+                    if (gameState[row][col].type === 'pawn' && 
+                        Math.abs(row - selectedPiece.row) === 2) {
+                        lastDoubleStepPawn = { row, col };
+                    } else {
+                        lastDoubleStepPawn = null;
+                    }
+                    
                     if (gameState[row][col].type === 'pawn' && (row === 0 || row === 7)) {
-                        gameState[row][col].type = 'queen'; // Auto-promote to queen for simplicity
+                        gameState[row][col].type = 'queen'; // Auto-promote to queen (will change to a better promotion menu in the future)
                     }
                     
                     selectedPiece = null;
                     possibleMoves = [];
-                    
-                    // Switch turns
                     currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
                     statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
                 }
