@@ -1,0 +1,85 @@
+@font-face {
+    font-family: 'ChessMerida';
+    src: url('https://cdn.jsdelivr.net/gh/mliebelt/chess-fonts@latest/fonts/merida/merida_regular.woff') format('woff');
+}
+
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 20px;
+}
+
+#game-container {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+#chessboard {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    grid-template-rows: repeat(8, 60px);
+    border: 2px solid #333;
+}
+
+.tile {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'ChessMerida', sans-serif;
+    font-size: 40px;
+    cursor: pointer;
+}
+
+.white-tile {
+    background-color: #ffffffcb;
+}
+
+.black-tile {
+    background-color: #4f5f85;
+}
+
+.white-piece {
+    color: white;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+}
+
+.black-piece {
+    color: black;
+}
+
+.selected {
+    background-color: #a9a9a9 !important;
+}
+
+.possible-move {
+    background-color: rgba(0, 255, 0, 0.3);
+}
+
+.en-passant {
+    background-color: rgba(255, 255, 0, 0.3);
+}
+
+#status {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+#controls {
+    margin: 10px 0;
+}
+
+button {
+    padding: 8px 16px;
+    margin: 0 5px;
+    cursor: pointer;
+}
+
+.check {
+    background-color: rgba(255, 0, 0, 0.3) !important;
+}
