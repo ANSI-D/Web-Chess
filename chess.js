@@ -7,6 +7,7 @@ let enPassantTarget = null;
 let playAgainstAI = false;
 let aiThinking = false;
 let checkStatus = { white: false, black: false };
+let gameOver = false;  // Add gameOver flag
 
 // DOM elements
 const chessboard = document.getElementById('chessboard');
@@ -28,6 +29,7 @@ function startNewGame() {
     possibleMoves = [];
     enPassantTarget = null;
     checkStatus = { white: false, black: false };
+    gameOver = false;  // Reset gameOver flag
     statusDisplay.textContent = "White's turn";
     renderBoard();
     
@@ -133,7 +135,8 @@ function getPieceSymbol(piece) {
 }
 
 function handleTileClick(row, col) {
-    if (aiThinking || (playAgainstAI && currentPlayer === 'black')) return;
+    // Don't allow moves if game is over or AI is thinking
+    if (gameOver || aiThinking || (playAgainstAI && currentPlayer === 'black')) return;
     
     const piece = gameState[row][col];
     
@@ -158,7 +161,7 @@ function handleTileClick(row, col) {
     if (move) {
         executeMove(selectedPiece.row, selectedPiece.col, row, col, move.isEnPassant);
         
-        if (playAgainstAI && currentPlayer === 'black') {
+        if (playAgainstAI && currentPlayer === 'black' && !gameOver) {
             setTimeout(makeAIMove, 500);
         }
     }
@@ -212,13 +215,31 @@ function executeMove(fromRow, fromCol, toRow, toCol, isEnPassant) {
     possibleMoves = [];
     currentPlayer = opponent;
     
-    // Update status message
-    if (isCheckmate(opponent)) {
-        statusDisplay.textContent = `Checkmate! ${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)} wins!`;
-    } else if (checkStatus[opponent]) {
-        statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)} is in check!`;
+    // Check for checkmate or stalemate
+    let isCheckmated = false;
+    if (checkStatus[opponent]) {
+        isCheckmated = isCheckmate(opponent);
+        if (isCheckmated) {
+            gameOver = true; // Set game over flag
+        }
     } else {
-        statusDisplay.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
+        // Check for stalemate
+        if (isStalemate(opponent)) {
+            gameOver = true;
+            statusDisplay.textContent = "Stalemate! Game ends in a draw.";
+            renderBoard();
+            return;
+        }
+    }
+    
+    // Update status message
+    if (isCheckmated) {
+        const winner = opponent === 'white' ? 'black' : 'white';
+        statusDisplay.textContent = `Checkmate! ${winner.charAt(0).toUpperCase() + winner.slice(1)} wins!`;
+    } else if (checkStatus[opponent]) {
+        statusDisplay.textContent = `${opponent.charAt(0).toUpperCase() + opponent.slice(1)} is in check!`;
+    } else {
+        statusDisplay.textContent = `${opponent.charAt(0).toUpperCase() + opponent.slice(1)}'s turn`;
     }
     
     renderBoard();
@@ -245,11 +266,29 @@ function getValidMoves(row, col) {
         }
         
         // Find the king's position
-        const kings = findKings();
-        const kingPos = kings[currentPlayer];
+        let kingRow = -1, kingCol = -1;
+        
+        // If we're moving the king, use the destination position
+        if (piece.type === 'king') {
+            kingRow = move.row;
+            kingCol = move.col;
+        } else {
+            // Otherwise find the king's current position
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = newState[r][c];
+                    if (p && p.type === 'king' && p.color === currentPlayer) {
+                        kingRow = r;
+                        kingCol = c;
+                        break;
+                    }
+                }
+                if (kingRow !== -1) break;
+            }
+        }
         
         // Check if king would be under attack after this move
-        if (!isSquareUnderAttack(newState, kingPos.row, kingPos.col, currentPlayer)) {
+        if (!isSquareUnderAttack(newState, kingRow, kingCol, currentPlayer)) {
             validMoves.push(move);
         }
     }
@@ -264,7 +303,7 @@ function isSquareUnderAttack(board, row, col, defenderColor) {
         for (let c = 0; c < 8; c++) {
             const piece = board[r][c];
             if (piece && piece.color === attackerColor) {
-                const moves = getPossibleMovesForPiece(board, r, c);
+                const moves = getPossibleMovesForPiece(board, r, c, true);
                 if (moves.some(m => m.row === row && m.col === col)) {
                     return true;
                 }
@@ -294,123 +333,29 @@ function isCheckmate(color) {
     return true;
 }
 
-function makeAIMove() {
-    if (aiThinking) return;
+// Add function to detect stalemate
+function isStalemate(color) {
+    if (checkStatus[color]) return false; // Not stalemate if in check
     
-    aiThinking = true;
-    statusDisplay.textContent = "AI thinking...";
-    
-    setTimeout(() => {
-        const bestMove = findBestMove(gameState, 3);
-        
-        if (bestMove) {
-            executeMove(bestMove.from.row, bestMove.from.col, bestMove.to.row, bestMove.to.col, bestMove.isEnPassant);
-        }
-        
-        aiThinking = false;
-    }, 100);
-}
-
-function evaluateBoard(board) {
-    const pieceValues = {
-        pawn: 1,
-        knight: 3,
-        bishop: 3,
-        rook: 5,
-        queen: 9,
-        king: 0
-    };
-    
-    let score = 0;
-    
+    // Check if any legal move exists
     for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
-            const piece = board[row][col];
-            if (piece) {
-                const value = pieceValues[piece.type];
-                score += piece.color === 'white' ? value : -value;
-            }
-        }
-    }
-    
-    return score;
-}
-
-function minimax(board, depth, isMaximizing, alpha, beta) {
-    if (depth === 0) {
-        return { score: evaluateBoard(board) };
-    }
-    
-    const moves = getAllPossibleMoves(board, isMaximizing ? 'white' : 'black');
-    let bestMove = null;
-    let bestScore = isMaximizing ? -Infinity : Infinity;
-    
-    for (const move of moves) {
-        const newBoard = JSON.parse(JSON.stringify(board));
-        newBoard[move.to.row][move.to.col] = newBoard[move.from.row][move.from.col];
-        newBoard[move.from.row][move.from.col] = null;
-        
-        if (move.isEnPassant) {
-            newBoard[move.from.row][move.to.col] = null;
-        }
-        
-        if (newBoard[move.to.row][move.to.col].type === 'pawn' && 
-            (move.to.row === 0 || move.to.row === 7)) {
-            newBoard[move.to.row][move.to.col].type = 'queen';
-        }
-        
-        const result = minimax(newBoard, depth - 1, !isMaximizing, alpha, beta);
-        
-        if (isMaximizing) {
-            if (result.score > bestScore) {
-                bestScore = result.score;
-                bestMove = move;
-            }
-            alpha = Math.max(alpha, bestScore);
-        } else {
-            if (result.score < bestScore) {
-                bestScore = result.score;
-                bestMove = move;
-            }
-            beta = Math.min(beta, bestScore);
-        }
-        
-        if (beta <= alpha) {
-            break;
-        }
-    }
-    
-    return { score: bestScore, move: bestMove };
-}
-
-function findBestMove(board, depth) {
-    const result = minimax(board, depth, false, -Infinity, Infinity);
-    return result.move;
-}
-
-function getAllPossibleMoves(board, color) {
-    const moves = [];
-    
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-            const piece = board[row][col];
+            const piece = gameState[row][col];
             if (piece && piece.color === color) {
-                const pieceMoves = getPossibleMovesForPiece(board, row, col);
-                pieceMoves.forEach(move => {
-                    moves.push({
-                        from: { row, col },
-                        to: { row: move.row, col: move.col },
-                        isEnPassant: move.isEnPassant
-                    });
-                });
+                const moves = getValidMoves(row, col);
+                if (moves.length > 0) {
+                    return false;
+                }
             }
         }
     }
     
-    return moves;
+    return true;
 }
 
-function getPossibleMovesForPiece(board, row, col) {
+// Update getPossibleMovesForPiece to take an optional parameter to indicate
+// when we're checking attacks (to avoid recursion problems)
+function getPossibleMovesForPiece(board, row, col, checkingAttacks = false) {
     const piece = board[row][col];
     if (!piece) return [];
     
@@ -526,4 +471,120 @@ function addSlidingMoves(board, row, col, directions, moves) {
             newCol += dc;
         }
     }
+}
+
+function makeAIMove() {
+    if (aiThinking || gameOver) return;
+    
+    aiThinking = true;
+    statusDisplay.textContent = "AI thinking...";
+    
+    setTimeout(() => {
+        const bestMove = findBestMove(gameState, 3);
+        
+        if (bestMove) {
+            executeMove(bestMove.from.row, bestMove.from.col, bestMove.to.row, bestMove.to.col, bestMove.isEnPassant);
+        }
+        
+        aiThinking = false;
+    }, 100);
+}
+
+function evaluateBoard(board) {
+    const pieceValues = {
+        pawn: 1,
+        knight: 3,
+        bishop: 3,
+        rook: 5,
+        queen: 9,
+        king: 0
+    };
+    
+    let score = 0;
+    
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const piece = board[row][col];
+            if (piece) {
+                const value = pieceValues[piece.type];
+                score += piece.color === 'white' ? value : -value;
+            }
+        }
+    }
+    
+    return score;
+}
+
+function minimax(board, depth, isMaximizing, alpha, beta) {
+    if (depth === 0) {
+        return { score: evaluateBoard(board) };
+    }
+    
+    const moves = getAllPossibleMoves(board, isMaximizing ? 'white' : 'black');
+    let bestMove = null;
+    let bestScore = isMaximizing ? -Infinity : Infinity;
+    
+    for (const move of moves) {
+        const newBoard = JSON.parse(JSON.stringify(board));
+        newBoard[move.to.row][move.to.col] = newBoard[move.from.row][move.from.col];
+        newBoard[move.from.row][move.from.col] = null;
+        
+        if (move.isEnPassant) {
+            newBoard[move.from.row][move.to.col] = null;
+        }
+        
+        if (newBoard[move.to.row][move.to.col].type === 'pawn' && 
+            (move.to.row === 0 || move.to.row === 7)) {
+            newBoard[move.to.row][move.to.col].type = 'queen';
+        }
+        
+        const result = minimax(newBoard, depth - 1, !isMaximizing, alpha, beta);
+        
+        if (isMaximizing) {
+            if (result.score > bestScore) {
+                bestScore = result.score;
+                bestMove = move;
+            }
+            alpha = Math.max(alpha, bestScore);
+        } else {
+            if (result.score < bestScore) {
+                bestScore = result.score;
+                bestMove = move;
+            }
+            beta = Math.min(beta, bestScore);
+        }
+        
+        if (beta <= alpha) {
+            break;
+        }
+    }
+    
+    return { score: bestScore, move: bestMove };
+}
+
+function findBestMove(board, depth) {
+    const result = minimax(board, depth, false, -Infinity, Infinity);
+    return result.move;
+}
+
+function getAllPossibleMoves(board, color) {
+    const moves = [];
+    
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const piece = board[row][col];
+            if (piece && piece.color === color) {
+                const pieceMoves = getPossibleMovesForPiece(board, row, col);
+                pieceMoves.forEach(move => {
+                    moves.push({
+                        from: { row, col },
+                        to: { row: move.row, col: move.col },
+                        isEnPassant: move.isEnPassant
+                    });
+                });
+            }
+        }
+    }
+    
+    return moves;
 }
